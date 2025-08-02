@@ -1,0 +1,15 @@
+version: "3.8"
+services:
+  claude-proxy:
+    image: claude-proxy
+    container_name: claude-proxy
+    ports:
+      - "8082:8082"
+    environment:
+      OPENAI_API_BASE: "http://10.2.2.10:4000/v1"
+      BIG_MODEL: "gpt-4.1"
+      SMALL_MODEL: "gpt-4.1-mini"
+      MAX_TOKENS: "65535"
+      BIG_PREFIXES: "opus,sonnet"
+      SMALL_PREFIXES: "haiku"
+    restart: unless-stopped
