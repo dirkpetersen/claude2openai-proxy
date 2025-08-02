@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Header, Depends
 import uvicorn
 import logging
 import json
@@ -76,7 +76,12 @@ for handler in logger.handlers:
     if isinstance(handler, logging.StreamHandler):
         handler.setFormatter(ColorizedFormatter('%(asctime)s - %(levelname)s - %(message)s'))
 
-app = FastAPI()
+app = FastAPI(
+    title="Claude2OpenAI Proxy",
+    description="Proxy server that accepts Anthropic-style requests and forwards to OpenAI via LiteLLM. Provides OpenAPI schema and Swagger UI at /docs and /redoc.",
+    version="0.1.0",
+    contact={"name": "Maintainers", "url": "https://github.com"},
+)
 
 # Get model mapping configuration from environment
 # Default to latest OpenAI models if not set
@@ -107,54 +112,58 @@ OPENAI_MODELS = [
 # Models for Anthropic API requests
 class ContentBlockText(BaseModel):
     type: Literal["text"]
-    text: str
+    text: str = Field(..., description="Text content block")
 
 class ContentBlockImage(BaseModel):
     type: Literal["image"]
-    source: Dict[str, Any]
+    source: Dict[str, Any] = Field(..., description="Anthropic image block source with type (e.g., base64, url) and media_type")
 
 class ContentBlockToolUse(BaseModel):
     type: Literal["tool_use"]
-    id: str
-    name: str
-    input: Dict[str, Any]
+    id: str = Field(..., description="Unique tool invocation id")
+    name: str = Field(..., description="Tool name")
+    input: Dict[str, Any] = Field(default_factory=dict, description="Tool input JSON payload")
 
 class ContentBlockToolResult(BaseModel):
     type: Literal["tool_result"]
-    tool_use_id: str
-    content: Union[str, List[Dict[str, Any]], Dict[str, Any], List[Any], Any]
+    tool_use_id: str = Field(..., description="ID of corresponding tool_use event")
+    content: Union[str, List[Dict[str, Any]], Dict[str, Any], List[Any], Any] = Field(
+        ..., description="Tool result content; may be text, JSON object, or list of content blocks"
+    )
 
 class SystemContent(BaseModel):
     type: Literal["text"]
-    text: str
+    text: str = Field(..., description="System prompt text block")
 
 class Message(BaseModel):
-    role: Literal["user", "assistant"] 
-    content: Union[str, List[Union[ContentBlockText, ContentBlockImage, ContentBlockToolUse, ContentBlockToolResult]]]
+    role: Literal["user", "assistant"] = Field(..., description="Message role")
+    content: Union[str, List[Union[ContentBlockText, ContentBlockImage, ContentBlockToolUse, ContentBlockToolResult]]] = Field(
+        ..., description="String content or list of content blocks per Anthropic spec"
+    )
 
 class Tool(BaseModel):
-    name: str
-    description: Optional[str] = None
-    input_schema: Dict[str, Any]
+    name: str = Field(..., description="Tool name")
+    description: Optional[str] = Field(None, description="Tool description")
+    input_schema: Dict[str, Any] = Field(..., description="JSON Schema for tool input")
 
 class ThinkingConfig(BaseModel):
-    enabled: bool
+    enabled: bool = Field(..., description="Enable thinking mode (Anthropic experimental)")
 
 class MessagesRequest(BaseModel):
-    model: str
-    max_tokens: int
-    messages: List[Message]
-    system: Optional[Union[str, List[SystemContent]]] = None
-    stop_sequences: Optional[List[str]] = None
-    stream: Optional[bool] = False
-    temperature: Optional[float] = 1.0
-    top_p: Optional[float] = None
-    top_k: Optional[int] = None
-    metadata: Optional[Dict[str, Any]] = None
-    tools: Optional[List[Tool]] = None
-    tool_choice: Optional[Dict[str, Any]] = None
-    thinking: Optional[ThinkingConfig] = None
-    original_model: Optional[str] = None
+    model: str = Field(..., description="Model id; accepts provider-prefixed (openai/..., anthropic/...) or will be normalized.", examples=["anthropic/claude-3-5-sonnet-20240620", "openai/gpt-4o-mini"])
+    max_tokens: int = Field(..., description="Maximum output tokens", examples=[256])
+    messages: List[Message] = Field(..., description="Conversation messages per Anthropic messages API")
+    system: Optional[Union[str, List[SystemContent]]] = Field(None, description="System prompt as string or list of text blocks")
+    stop_sequences: Optional[List[str]] = Field(None, description="Custom stop sequences")
+    stream: Optional[bool] = Field(False, description="If true, returns SSE stream of Anthropic events")
+    temperature: Optional[float] = Field(1.0, description="Sampling temperature")
+    top_p: Optional[float] = Field(None, description="Nucleus sampling top_p")
+    top_k: Optional[int] = Field(None, description="Top-k sampling")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Opaque metadata passthrough")
+    tools: Optional[List[Tool]] = Field(None, description="List of tools available to the model")
+    tool_choice: Optional[Dict[str, Any]] = Field(None, description="Tool choice control (auto|any|tool with name)")
+    thinking: Optional[ThinkingConfig] = Field(None, description="Anthropic thinking config")
+    original_model: Optional[str] = Field(None, description="Original model before internal normalization")
 
     @field_validator('model')
     def validate_model_field(cls, v, info):
@@ -182,13 +191,13 @@ class MessagesRequest(BaseModel):
         return new_model
 
 class TokenCountRequest(BaseModel):
-    model: str
-    messages: List[Message]
-    system: Optional[Union[str, List[SystemContent]]] = None
-    tools: Optional[List[Tool]] = None
-    thinking: Optional[ThinkingConfig] = None
-    tool_choice: Optional[Dict[str, Any]] = None
-    original_model: Optional[str] = None
+    model: str = Field(..., description="Model id used for tokenization context")
+    messages: List[Message] = Field(..., description="Messages to count tokens for")
+    system: Optional[Union[str, List[SystemContent]]] = Field(None, description="Optional system prompt")
+    tools: Optional[List[Tool]] = Field(None, description="Tools (may affect tokenization)")
+    thinking: Optional[ThinkingConfig] = Field(None, description="Thinking config")
+    tool_choice: Optional[Dict[str, Any]] = Field(None, description="Tool choice control")
+    original_model: Optional[str] = Field(None, description="Original model before normalization")
 
     @field_validator('model')
     def validate_model_token_count(cls, v, info):
@@ -216,23 +225,23 @@ class TokenCountRequest(BaseModel):
         return new_model
 
 class TokenCountResponse(BaseModel):
-    input_tokens: int
+    input_tokens: int = Field(..., description="Estimated prompt token count")
 
 class Usage(BaseModel):
-    input_tokens: int
-    output_tokens: int
-    cache_creation_input_tokens: int = 0
-    cache_read_input_tokens: int = 0
+    input_tokens: int = Field(..., description="Prompt tokens")
+    output_tokens: int = Field(..., description="Completion tokens")
+    cache_creation_input_tokens: int = Field(0, description="Anthropic cache creation tokens")
+    cache_read_input_tokens: int = Field(0, description="Anthropic cache read tokens")
 
 class MessagesResponse(BaseModel):
-    id: str
-    model: str
-    role: Literal["assistant"] = "assistant"
-    content: List[Union[ContentBlockText, ContentBlockToolUse]]
-    type: Literal["message"] = "message"
-    stop_reason: Optional[Literal["end_turn", "max_tokens", "stop_sequence", "tool_use"]] = None
-    stop_sequence: Optional[str] = None
-    usage: Usage
+    id: str = Field(..., description="Message id")
+    model: str = Field(..., description="Model id used")
+    role: Literal["assistant"] = Field("assistant", description="Always 'assistant' for responses")
+    content: List[Union[ContentBlockText, ContentBlockToolUse]] = Field(..., description="Assistant content blocks")
+    type: Literal["message"] = Field("message", description="Anthropic message type")
+    stop_reason: Optional[Literal["end_turn", "max_tokens", "stop_sequence", "tool_use"]] = Field(None, description="Why generation stopped")
+    stop_sequence: Optional[str] = Field(None, description="Matched stop sequence if any")
+    usage: Usage = Field(..., description="Token usage")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -964,10 +973,20 @@ async def handle_streaming(response_generator, original_request: MessagesRequest
         # Send final [DONE] marker
         yield "data: [DONE]\n\n"
 
-@app.post("/v1/messages")
+@app.post(
+    "/v1/messages",
+    summary="Create message (Anthropic-compatible)",
+    description=(
+        "Accepts Anthropic Messages API-compatible body and optionally streams Anthropic SSE events when stream=true.\n"
+        "SSE event order: message_start → content_block_start (text) → content_block_delta(s) → content_block_stop;\n"
+        "optional tool_use content_block_start/delta/stop; then message_delta(stop_reason, usage) → message_stop → [DONE].\n"
+        "Send X-API-Key header with upstream OpenAI key."
+    ),
+)
 async def create_message(
     request: MessagesRequest,
-    raw_request: Request
+    raw_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key", description="OpenAI API key used upstream"),
 ):
     try:
         body = await raw_request.body()
@@ -1006,7 +1025,7 @@ async def create_message(
         litellm_request = convert_anthropic_to_litellm(request)
 
         # Build backend auth headers based on provider; prefer passthrough
-        incoming_x_api_key = raw_request.headers.get("x-api-key") or raw_request.headers.get("X-API-Key")
+        incoming_x_api_key = x_api_key or raw_request.headers.get("x-api-key") or raw_request.headers.get("X-API-Key")
         backend_headers = {}
         
         if incoming_x_api_key:
@@ -1240,10 +1259,15 @@ async def create_message(
         status_code = error_details.get('status_code', 500)
         raise HTTPException(status_code=status_code, detail=error_message)
 
-@app.post("/v1/messages/count_tokens")
+@app.post(
+    "/v1/messages/count_tokens",
+    summary="Count tokens (Anthropic-compatible)",
+    description="Estimates input token count for the provided messages/system using upstream model tokenizer.",
+)
 async def count_tokens(
     request: TokenCountRequest,
-    raw_request: Request
+    raw_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key", description="OpenAI API key used upstream"),
 ):
     try:
         # Log the incoming token count request
@@ -1320,7 +1344,7 @@ async def count_tokens(
 
 @app.get("/")
 async def root():
-    return {"message": "Anthropic Proxy for LiteLLM"}
+    return {"message": "Anthropic Proxy for LiteLLM", "docs": "/docs", "redoc": "/redoc", "openapi": "/openapi.json"}
 
 # Define ANSI color codes for terminal output
 class Colors:

@@ -13,11 +13,29 @@ Anthropic 스타일의 /v1/messages 요청을 OpenAI 형식으로 변환해 Lite
 - 툴 호출 패스스루 및 응답을 Anthropic tool_use 블록으로 변환
 - LiteLLM token_counter 기반 토큰 카운트 엔드포인트
 - 불필요한 로그 필터링과 보기 좋은 요청 로그
+- OpenAPI/Swagger 문서 제공(모델 스키마 설명 및 SSE 흐름 포함)
 
 ## 실행
 ```
 uv run uvicorn server:app --host 0.0.0.0 --port 8082 --reload
 ```
+
+## API 문서 (OpenAPI / Swagger)
+- OpenAPI JSON: `/_openapi.json` 또는 FastAPI 기본 `/openapi.json`
+- Swagger UI: `/docs`
+- ReDoc: `/redoc`
+
+앱 메타데이터(제목/설명/버전)와 스키마 설명이 포함되어 Anthropic 요청/응답 구조와 스트리밍 동작을 문서에서 바로 확인할 수 있습니다.
+
+## Anthropic 호환성 메모
+- 엔드포인트는 Anthropic Messages API 형태의 페이로드를 받습니다.
+- `stream=true`일 때 Anthropic 스타일 SSE 이벤트 순서:
+  - `message_start` → `content_block_start` (text) → `content_block_delta`(여러 번) → `content_block_stop`
+  - 툴 호출 시: `content_block_start` (tool_use) → `input_json_delta`(여러 번) → `content_block_stop`
+  - 이후 `message_delta`(stop_reason, usage 포함) → `message_stop` → 최종 `data: [DONE]`
+- 툴링:
+  - 요청의 `tools[]`는 `name`, `description`, `input_schema`(JSON Schema)를 사용합니다.
+  - Claude 계열 모델 응답에 `tool_use` 블록이 포함될 수 있으며, 비-Claude 모델은 툴 정보를 텍스트로 부가합니다.
 
 ## 컨테이너
 
@@ -63,6 +81,7 @@ services:
 ```
 docker compose up -d
 ```
+
 ## 사용 예시
 
 - Claude Code
@@ -91,11 +110,13 @@ claude
 - POST /v1/messages
   - 요청: Anthropic 유사 포맷 { model, max_tokens, messages, system, tools, tool_choice, temperature, stream }
   - 동작: OpenAI/LiteLLM 포맷으로 변환, OpenAI 모델 대상 max_tokens를 MAX_TOKENS로 캡
-  - 스트리밍: stream=true 시 Anthropic SSE 이벤트 전송(message_start, content_block_start/delta/stop, message_delta, message_stop)
+  - 스트리밍: stream=true 시 Anthropic SSE 이벤트 전송(message_start, content_block_start/delta/stop, message_delta, message_stop, 최종 [DONE])
+  - 인증: 헤더 `X-API-Key: <OpenAI 키>` (OpenAPI 문서에 노출)
 - POST /v1/messages/count_tokens
   - 응답: { input_tokens }
+  - 인증: 헤더 `X-API-Key: <OpenAI 키>`
 - GET /
-  - 응답: { message }
+  - 응답: { message, docs, redoc, openapi }
 
 ## 컨텐츠 변환 주의사항
 - user/assistant 메시지는 문자열 또는 컨텐츠 블록 허용; OpenAI로 보낼 때는 텍스트로 평탄화
@@ -104,7 +125,7 @@ claude
 - OpenAI API가 허용하지 않는 필드는 제거
 
 ## 인증/헤더
-- X-API-Key: <OpenAI 키>
+- `X-API-Key: <OpenAI 키>` 전송
 - 없으면 401 반환
 
 ## 예제

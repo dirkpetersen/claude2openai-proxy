@@ -13,11 +13,29 @@ FastAPI proxy translating Anthropic-style /v1/messages to OpenAI via LiteLLM. Ha
 - Tool calls passthrough; converts to Anthropic tool_use blocks on response
 - Token counting endpoint using LiteLLM token_counter
 - Minimal logging with filtered noise and pretty request logs
+- OpenAPI schema and Swagger UI with Anthropic-compatible models and endpoint docs
 
 ## Run
 ```
 uv run uvicorn server:app --host 0.0.0.0 --port 8082 --reload
 ```
+
+## API Docs (OpenAPI / Swagger)
+- OpenAPI JSON: GET `/_openapi.json` or `/openapi.json` (FastAPI default)
+- Swagger UI: GET `/docs`
+- ReDoc: GET `/redoc`
+
+App metadata (title/description/version) and schema descriptions are embedded so the docs reflect the Anthropic request/response shapes and streaming behavior.
+
+## Anthropic Compatibility Notes
+- Endpoints accept Anthropic Messages API-shaped payloads.
+- Streaming when `stream=true` returns Anthropic-style SSE events in this order:
+  - `message_start` → `content_block_start` (text) → `content_block_delta`(n) → `content_block_stop`
+  - optional tool call blocks: `content_block_start` (tool_use) → `input_json_delta`(n) → `content_block_stop`
+  - `message_delta` (includes `stop_reason`, `usage`) → `message_stop` → final `data: [DONE]`
+- Tooling:
+  - Request tools follow Anthropic `tools[]` with `name`, `description`, `input_schema` (JSON Schema).
+  - Responses may include `tool_use` blocks for Claude-family models; for non-Claude models, tool info is appended as text.
 
 ## Container
 
@@ -63,6 +81,7 @@ Run with:
 ```
 docker compose up -d
 ```
+
 ## Usages
 
 - Claude Code
@@ -87,11 +106,13 @@ ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY=sk-keyhere ANTHROPIC_
 - POST /v1/messages
   - Request body: Anthropic-like { model, max_tokens, messages, system, tools, tool_choice, temperature, stream }
   - Behavior: converts to OpenAI format for LiteLLM, caps max_tokens for OpenAI models to MAX_TOKENS
-  - Streaming: when stream=true, emits Anthropic SSE events (message_start, content_block_start/delta/stop, message_delta, message_stop)
+  - Streaming: when stream=true, emits Anthropic SSE events (message_start, content_block_start/delta/stop, message_delta, message_stop, final [DONE])
+  - Auth: Header `X-API-Key: <OpenAI key>` (OpenAPI 문서에 노출됨)
 - POST /v1/messages/count_tokens
   - Returns { input_tokens }
+  - Auth: Header `X-API-Key: <OpenAI key>`
 - GET /
-  - Returns { message }
+  - Returns { message, docs, redoc, openapi }
 
 ## Content Conversion Notes
 - User/assistant messages may be string or content blocks; lists are flattened to text for OpenAI
@@ -100,7 +121,7 @@ ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY=sk-keyhere ANTHROPIC_
 - Unsupported fields in messages are removed to satisfy OpenAI API
 
 ## Headers/Auth
-- Send X-API-Key: <OpenAI key>
+- Send `X-API-Key: <OpenAI key>`
 - If missing, request is rejected with 401
 
 ## Examples
