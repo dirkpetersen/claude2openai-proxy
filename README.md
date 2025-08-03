@@ -91,6 +91,8 @@ ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY=sk-keyhere ANTHROPIC_
 
 ## Environment
 - OPENAI_API_KEY: OpenAI key (or send via X-API-Key header)
+- OPENAI_API_BASE: upstream OpenAI-compatible base URL (e.g., https://api.openai.com/v1)
+- BASE_URL: external public prefix for this proxy behind LB/reverse-proxy (e.g., https://foo.bar/claude-proxy/v1). Only affects returned links/OpenAPI servers; not used for upstream calls
 - BIG_MODEL: default big model (default: gpt-4.1)
 - SMALL_MODEL: default small model (default: gpt-4.1-mini)
 - BIG_PREFIXES: map prefixes to BIG_MODEL (default: opus,sonnet)

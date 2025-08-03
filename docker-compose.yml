@@ -6,7 +6,8 @@ services:
     ports:
       - "8082:8082"
     environment:
-      OPENAI_API_BASE: "http://10.2.2.10:4000/v1"
+      OPENAI_API_BASE: "http://127.0.0.1:4000/v1"
+      BASE_URL: "https://your.local.external.url/claude/"
       BIG_MODEL: "gpt-4.1"
       SMALL_MODEL: "gpt-4.1-mini"
       MAX_TOKENS: "65535"

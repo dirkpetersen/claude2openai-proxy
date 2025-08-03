@@ -95,6 +95,8 @@ claude
 
 ## 환경변수
 - OPENAI_API_KEY: OpenAI 키(X-API-Key 헤더로 전달 가능)
+- OPENAI_API_BASE: 업스트림(OpenAI 호환) 베이스 URL (예: https://api.openai.com/v1)
+- BASE_URL: 이 프록시의 외부 공개 접두사(prefix), 로드밸런서/리버스프록시 뒤에서 사용 (예: https://foo.bar/claude-proxy/v1). 반환 링크와 OpenAPI servers에만 영향, 업스트림 호출에는 사용하지 않음
 - BIG_MODEL: 기본 대형 모델(기본값: gpt-4.1)
 - SMALL_MODEL: 기본 소형 모델(기본값: gpt-4.1-mini)
 - BIG_PREFIXES: 접두사를 BIG_MODEL로 매핑(기본값: opus,sonnet)

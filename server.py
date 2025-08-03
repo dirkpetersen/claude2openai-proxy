@@ -11,6 +11,7 @@ import uuid
 import time
 from dotenv import load_dotenv
 import sys
+from urllib.parse import urlparse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,6 +26,18 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
 )
 logger = logging.getLogger(__name__)
+
+# Set Base URL
+BASE_URL = os.environ.get("BASE_URL")
+if BASE_URL:
+    parsed = urlparse(BASE_URL)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        logger.warning(f"Invalid BASE_URL ignored: {BASE_URL}")
+        BASE_URL = None
+    else:
+        if BASE_URL.endswith('/'):
+            BASE_URL = BASE_URL[:-1]
+        logger.warning(f"Using BASE_URL (external prefix): {BASE_URL}")
 
 # Configure uvicorn to be quieter
 import uvicorn
@@ -80,8 +93,18 @@ app = FastAPI(
     title="Claude2OpenAI Proxy",
     description="Proxy server that accepts Anthropic-style requests and forwards to OpenAI via LiteLLM. Provides OpenAPI schema and Swagger UI at /docs and /redoc.",
     version="0.1.0",
-    contact={"name": "Maintainers", "url": "https://github.com"},
+    contact={"name": "Maintainers", "url": "https://github.com/ziozzang/claude2openai-proxy"},
 )
+
+_original_openapi = app.openapi
+
+def custom_openapi():
+    schema = _original_openapi()
+    if BASE_URL:
+        schema["servers"] = [{"url": BASE_URL}]
+    return schema
+
+app.openapi = custom_openapi
 
 # Get model mapping configuration from environment
 # Default to latest OpenAI models if not set
@@ -1344,7 +1367,10 @@ async def count_tokens(
 
 @app.get("/")
 async def root():
-    return {"message": "Anthropic Proxy for LiteLLM", "docs": "/docs", "redoc": "/redoc", "openapi": "/openapi.json"}
+    docs = f"{BASE_URL}/docs" if BASE_URL else "/docs"
+    redoc = f"{BASE_URL}/redoc" if BASE_URL else "/redoc"
+    openapi = f"{BASE_URL}/openapi.json" if BASE_URL else "/openapi.json"
+    return {"message": "Anthropic Proxy for LiteLLM", "docs": docs, "redoc": redoc, "openapi": openapi}
 
 # Define ANSI color codes for terminal output
 class Colors:
