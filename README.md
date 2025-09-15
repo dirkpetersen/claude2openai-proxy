@@ -177,3 +177,128 @@ curl -sS -X POST http://localhost:8082/v1/messages/count_tokens \
 ## Security Notes
 - Do not log secrets; API key is read from header and assigned to process env for the call, then restored
 - Validate inputs where possible; unsupported fields are stripped before upstream calls
+
+## Install as user level system service 
+
+- use the `start-service.sh` and `stop-service.sh` scripts if you prefer systemd over containers.
+- make sure uv is isntalled (or run `curl -LsSf https://astral.sh/uv/install.sh | sh`)
+
+run start-service.sh
+
+```
+$ ./start-service.sh
+[INFO] Installing dependencies...
+Using CPython 3.12.3 interpreter at: /usr/bin/python3
+Creating virtual environment at: .venv
+Resolved 67 packages in 1.10s
+warning: `aiohttp==3.11.14` is yanked (reason: "Regression: https://github.com/aio-libs/aiohttp/issues/10617")
+Installed 63 packages in 398ms
+ + aiohappyeyeballs==2.6.1
+ + aiohttp==3.11.14
+ + aiosignal==1.3.2
+ + annotated-types==0.7.0
+ + anyio==4.9.0
+ + attrs==25.3.0
+ + certifi==2025.1.31
+ + charset-normalizer==3.4.1
+ + click==8.1.8
+ + distro==1.9.0
+ + dnspython==2.7.0
+ + email-validator==2.2.0
+ + fastapi==0.115.11
+ + fastapi-cli==0.0.7
+ + filelock==3.18.0
+ + frozenlist==1.5.0
+ + fsspec==2025.3.0
+ + h11==0.14.0
+ + httpcore==1.0.7
+ + httptools==0.6.4
+ + httpx==0.28.1
+ + huggingface-hub==0.29.3
+ + idna==3.10
+ + importlib-metadata==8.6.1
+ + jinja2==3.1.6
+ + jiter==0.9.0
+ + jsonschema==4.23.0
+ + jsonschema-specifications==2024.10.1
+ + litellm==1.63.11
+ + markdown-it-py==3.0.0
+ + markupsafe==3.0.2
+ + mdurl==0.1.2
+ + multidict==6.2.0
+ + openai==1.66.3
+ + packaging==24.2
+ + propcache==0.3.0
+ + pydantic==2.10.6
+ + pydantic-core==2.27.2
+ + pygments==2.19.1
+ + python-dotenv==1.0.1
+ + python-multipart==0.0.20
+ + pyyaml==6.0.2
+ + referencing==0.36.2
+ + regex==2024.11.6
+ + requests==2.32.3
+ + rich==13.9.4
+ + rich-toolkit==0.13.2
+ + rpds-py==0.23.1
+ + shellingham==1.5.4
+ + sniffio==1.3.1
+ + starlette==0.46.1
+ + tiktoken==0.9.0
+ + tokenizers==0.21.1
+ + tqdm==4.67.1
+ + typer==0.15.2
+ + typing-extensions==4.12.2
+ + urllib3==2.3.0
+ + uvicorn==0.34.0
+ + uvloop==0.21.0
+ + watchfiles==1.0.4
+ + websockets==15.0.1
+ + yarl==1.18.3
+ + zipp==3.21.0
+[INFO] Creating systemd service file...
+[INFO] Service file created at /home/ochat/.config/systemd/user/claude-proxy.service
+[INFO] Stopping any existing service...
+[INFO] Reloading systemd user daemon...
+[INFO] Enabling claude-proxy service...
+Created symlink /home/ochat/.config/systemd/user/default.target.wants/claude-proxy.service → /home/ochat/.config/systemd/user/claude-proxy.service.
+[INFO] Starting claude-proxy service...
+[INFO] ✅ Service claude-proxy is running successfully!
+[INFO] Service status:
+● claude-proxy.service - Claude to OpenAI Proxy Server
+     Loaded: loaded (/home/ochat/.config/systemd/user/claude-proxy.service; enabled; preset: enabled)
+     Active: active (running) since Mon 2025-09-15 14:04:28 PDT; 3s ago
+   Main PID: 432858 (uv)
+      Tasks: 5 (limit: 2267)
+     Memory: 82.2M (peak: 82.4M)
+        CPU: 2.042s
+     CGroup: /user.slice/user-996.slice/user@996.service/app.slice/claude-proxy.service
+             ├─432858 uv run uvicorn server:app --host 0.0.0.0 --port 8088
+             └─432862 /home/ochat/claude2openai-proxy/.venv/bin/python /home/ochat/claude2openai-proxy/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8088
+
+Sep 15 14:04:28 ochat systemd[1268]: Started claude-proxy.service - Claude to OpenAI Proxy Server.
+[INFO] 🎉 Setup complete!
+[INFO]
+[INFO] Your service is now running on http://0.0.0.0:8088
+[INFO]
+[INFO] Useful commands:
+[INFO]   Check status:    systemctl --user status claude-proxy
+[INFO]   View logs:       journalctl --user -u claude-proxy -f
+[INFO]   Restart service: systemctl --user restart claude-proxy
+[INFO]   Stop service:    systemctl --user stop claude-proxy
+[INFO]   Disable service: systemctl --user disable claude-proxy
+[INFO]
+[INFO] To enable linger (start service on boot without login):
+[INFO]   sudo loginctl enable-linger ochat
+```
+
+and then stop-service 
+
+```
+$ ./stop-service.sh
+[INFO] Stopping claude-proxy service...
+[INFO] Disabling claude-proxy service...
+[INFO] Removing service file...
+[INFO] Reloading systemd user daemon...
+[INFO] ✅ Service claude-proxy has been stopped and removed!
+```
